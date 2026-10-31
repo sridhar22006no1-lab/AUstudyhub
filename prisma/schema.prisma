@@ -1,0 +1,191 @@
+// Prisma schema for AU Study Hub
+// Independent academic resource discovery platform for Anna University students
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Department {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  name        String
+  shortName   String    @map("short_name")
+  description String?
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  subjects    Subject[]
+  resources   Resource[]
+  users       User[]
+
+  @@map("departments")
+}
+
+model Regulation {
+  id             String    @id @default(cuid())
+  code           String    @unique // e.g. "R2017", "R2021", "R2023", "R2025"
+  name           String
+  applicableFrom Int       @map("applicable_from") // year, e.g. 2021
+  description    String?
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  subjects       Subject[]
+  resources      Resource[]
+
+  @@map("regulations")
+}
+
+model Semester {
+  id        String    @id @default(cuid())
+  number    Int       @unique // 1 to 8
+  label     String    // e.g. "Semester 1", "Semester 2"
+
+  subjects  Subject[]
+  resources Resource[]
+  users     User[]
+
+  @@map("semesters")
+}
+
+model Subject {
+  id           String     @id @default(cuid())
+  departmentId String     @map("department_id")
+  regulationId String     @map("regulation_id")
+  semesterId   String     @map("semester_id")
+  code         String     // e.g. "CS3251", "MA3151"
+  name         String     // e.g. "Programming in C"
+  subjectType  String     @default("Theory") @map("subject_type") // Theory, Practical, Theory + Practical
+  isActive     Boolean    @default(true) @map("is_active")
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  regulation   Regulation @relation(fields: [regulationId], references: [id], onDelete: Cascade)
+  semester     Semester   @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  resources    Resource[]
+
+  @@unique([code, regulationId, departmentId])
+  @@index([code])
+  @@index([name])
+  @@index([departmentId, regulationId, semesterId])
+  @@map("subjects")
+}
+
+model Resource {
+  id                 String           @id @default(cuid())
+  resourceType       String           @map("resource_type") // question_paper, note, syllabus
+  title              String
+  description        String?
+  subjectId          String           @map("subject_id")
+  departmentId       String           @map("department_id")
+  regulationId       String           @map("regulation_id")
+  semesterId         String           @map("semester_id")
+  fileUrl            String?          @map("file_url")
+  externalSourceUrl  String?          @map("external_source_url")
+  fileType           String           @default("pdf") @map("file_type")
+  fileSizeBytes      Int?             @map("file_size_bytes")
+  sourceName         String           @map("source_name") // e.g. "Anna University Official Portal", "DOTE Curriculum Cell"
+  sourceUrl          String           @map("source_url")
+  verificationStatus String           @default("verified") @map("verification_status") // verified, unverified, pending_review
+  isOfficial         Boolean          @default(false) @map("is_official")
+  isPublished        Boolean          @default(true) @map("is_published")
+  uploadedBy         String?          @map("uploaded_by")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  subject            Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  department         Department       @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  regulation         Regulation       @relation(fields: [regulationId], references: [id], onDelete: Cascade)
+  semester           Semester         @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+
+  questionPaper      QuestionPaper?
+  bookmarks          Bookmark[]
+  reports            ResourceReport[]
+  events             ResourceEvent[]
+
+  @@index([resourceType])
+  @@index([subjectId])
+  @@index([verificationStatus])
+  @@index([isPublished])
+  @@map("resources")
+}
+
+model QuestionPaper {
+  id          String   @id @default(cuid())
+  resourceId  String   @unique @map("resource_id")
+  examYear    Int      @map("exam_year") // e.g. 2024, 2023, 2022
+  examSession String   @map("exam_session") // "Apr/May", "Nov/Dec"
+  paperKind   String   @default("regular") @map("paper_kind") // regular, arrear, supplementary
+
+  resource    Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([examYear])
+  @@index([examSession])
+  @@map("question_papers")
+}
+
+model User {
+  id                  String           @id @default(cuid())
+  email               String           @unique
+  passwordHash        String?          @map("password_hash")
+  fullName            String           @map("full_name")
+  role                String           @default("student") // student, moderator, admin
+  departmentId        String?          @map("department_id")
+  preferredSemesterId String?          @map("preferred_semester_id")
+  createdAt           DateTime         @default(now()) @map("created_at")
+
+  department          Department?      @relation(fields: [departmentId], references: [id])
+  preferredSemester   Semester?        @relation(fields: [preferredSemesterId], references: [id])
+  bookmarks           Bookmark[]
+  reports             ResourceReport[]
+  events              ResourceEvent[]
+
+  @@map("users")
+}
+
+model Bookmark {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  resourceId String   @map("resource_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resourceId])
+  @@map("bookmarks")
+}
+
+model ResourceReport {
+  id         String   @id @default(cuid())
+  resourceId String   @map("resource_id")
+  userId     String?  @map("user_id")
+  reportType String   @map("report_type") // broken_link, wrong_subject, copyright, other
+  message    String
+  status     String   @default("open") // open, investigating, resolved, rejected
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@map("resource_reports")
+}
+
+model ResourceEvent {
+  id         String   @id @default(cuid())
+  resourceId String   @map("resource_id")
+  eventType  String   @map("event_type") // view, preview, download
+  userId     String?  @map("user_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([resourceId, eventType])
+  @@map("resource_events")
+}
